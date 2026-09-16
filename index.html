@@ -343,7 +343,27 @@ function openModal(type){
  s.innerHTML=`<h2>${title}</h2>${body}<button class="btn gray" style="margin-top:12px" onclick="closeModal()">CLOSE</button>`;m.classList.add('show')
 }
 function closeModal(){document.getElementById('modal').classList.remove('show')}
-function checkPromo(){const c=document.getElementById('promoInput').value.trim();if(!c)return toast('Enter a promo code');toast('Unable to verify promo code');closeModal()}
+async function checkPromo(){
+ const c=document.getElementById('promoInput').value.trim().toUpperCase();
+ if(!c)return toast('Enter a promo code');
+ if(!state.email||state.email==='No email')return toast('Please sign in first');
+ closeModal();
+ toast('Checking code...');
+ try{
+  const {data:promo}=await sb.from('promo_codes').select('*').eq('code',c).eq('active',true).maybeSingle();
+  if(!promo)return toast('Invalid promo code');
+  if(promo.expires_at && new Date(promo.expires_at)<new Date())return toast('This code has expired');
+  if(promo.max_uses!=null && promo.used_count>=promo.max_uses)return toast('This code has reached its limit');
+  const {data:already}=await sb.from('promo_redemptions').select('id').eq('email',state.email).eq('code',c).maybeSingle();
+  if(already)return toast('You already used this code');
+  const {error:insErr}=await sb.from('promo_redemptions').insert({email:state.email,code:c});
+  if(insErr)return toast('Something went wrong, try again');
+  await sb.from('promo_codes').update({used_count:promo.used_count+1}).eq('code',c);
+  state.points+=promo.points;
+  await save();
+  toast('+'+promo.points+' points added!');
+ }catch(e){toast('Something went wrong, try again')}
+}
 document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
 function Nav(){return ''} // marker only; actual navs inserted below
 const navHTML=`<nav class="nav"><button data-p="home" onclick="go('home')"><b>⌂</b>Home</button><button data-p="daily" onclick="go('daily')"><b>📋</b>Tasks</button><button data-p="rewards" onclick="go('rewards')"><b>🎁</b>Rewards</button><button data-p="spin" onclick="go('spin')"><b>🎡</b>Spin</button><button data-p="profile" onclick="go('profile')"><b>👤</b>Profile</button></nav>`;
